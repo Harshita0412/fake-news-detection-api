@@ -2,59 +2,95 @@ from flask import Flask, request, jsonify
 import os
 import pickle
 
-# Disable GPU/CUDA attempts BEFORE importing TensorFlow
+# --------------------------------------------------
+# Disable GPU
+# --------------------------------------------------
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+# Limit TensorFlow threads to reduce RAM usage
+os.environ["TF_NUM_INTRAOP_THREADS"] = "1"
+os.environ["TF_NUM_INTEROP_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from huggingface_hub import hf_hub_download
+
 
 app = Flask(__name__)
 
 # --------------------------------------------------
 # TensorFlow CPU configuration
 # --------------------------------------------------
-tf.config.set_visible_devices([], "GPU")
+
+try:
+    tf.config.set_visible_devices([], "GPU")
+except Exception:
+    pass
+
+try:
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(1)
+except Exception:
+    pass
+
 
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
+
 MAX_LEN = 300
 
-# --------------------------------------------------
-# Load model from Hugging Face
-# --------------------------------------------------
-print("Downloading/loading model...")
+MODEL_REPO = "harshitamishra04/fake-news-detection-lstm"
+MODEL_FILE = "fake_news_lstm.keras"
 
-MODEL_PATH = hf_hub_download(
-    repo_id="harshitamishra04/fake-news-detection-lstm",
-    filename="fake_news_lstm.keras"
-)
-
-print("Model downloaded.")
-
-model = tf.keras.models.load_model(
-    MODEL_PATH,
-    compile=False
-)
-
-print("Model loaded successfully.")
-
-# --------------------------------------------------
-# Load tokenizer
-# --------------------------------------------------
-print("Loading tokenizer...")
-
-with open("tokenizer.pkl", "rb") as f:
-    tokenizer = pickle.load(f)
-
-print("Tokenizer loaded successfully.")
+model = None
+tokenizer = None
 
 
 # --------------------------------------------------
-# Prediction function
+# Load model only when needed
 # --------------------------------------------------
+
+def load_model_once():
+
+    global model
+    global tokenizer
+
+    if model is not None and tokenizer is not None:
+        return
+
+    print("Loading model...")
+
+    MODEL_PATH = hf_hub_download(
+        repo_id=MODEL_REPO,
+        filename=MODEL_FILE
+    )
+
+    print("Model downloaded.")
+
+    model = tf.keras.models.load_model(
+        MODEL_PATH,
+        compile=False
+    )
+
+    print("Model loaded successfully.")
+
+    print("Loading tokenizer...")
+
+    with open("tokenizer.pkl", "rb") as f:
+        tokenizer = pickle.load(f)
+
+    print("Tokenizer loaded successfully.")
+
+
+# --------------------------------------------------
+# Prediction
+# --------------------------------------------------
+
 def predict_news(article):
+
+    load_model_once()
 
     sequence = tokenizer.texts_to_sequences([article])
 
@@ -83,8 +119,9 @@ def predict_news(article):
 
 
 # --------------------------------------------------
-# Home route
+# Home
 # --------------------------------------------------
+
 @app.route("/", methods=["GET"])
 def home():
 
@@ -97,18 +134,20 @@ def home():
 # --------------------------------------------------
 # Health check
 # --------------------------------------------------
+
 @app.route("/health", methods=["GET"])
 def health():
 
     return jsonify({
         "status": "healthy",
-        "model_loaded": True
+        "model_loaded": model is not None
     })
 
 
 # --------------------------------------------------
 # Prediction API
 # --------------------------------------------------
+
 @app.route("/predict", methods=["POST"])
 def predict():
 
@@ -157,14 +196,10 @@ def predict():
 # --------------------------------------------------
 # Start server
 # --------------------------------------------------
+
 if __name__ == "__main__":
 
-    port = int(
-        os.environ.get(
-            "PORT",
-            5000
-        )
-    )
+    port = int(os.environ.get("PORT", 5000))
 
     app.run(
         host="0.0.0.0",
