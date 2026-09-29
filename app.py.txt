@@ -1,0 +1,128 @@
+from flask import Flask, request, jsonify
+import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from huggingface_hub import hf_hub_download
+import pickle
+import os
+
+app = Flask(__name__)
+
+# -----------------------------
+# Download model from Hugging Face
+# -----------------------------
+MODEL_PATH = hf_hub_download(
+    repo_id="harshitamishra04/fake-news-detection-lstm",
+    filename="fake_news_lstm.keras"
+)
+
+model = tf.keras.models.load_model(MODEL_PATH)
+
+# -----------------------------
+# Load tokenizer
+# -----------------------------
+with open("tokenizer.pkl", "rb") as f:
+    tokenizer = pickle.load(f)
+
+MAX_LEN = 300
+
+
+# -----------------------------
+# Prediction function
+# -----------------------------
+def predict_news(article):
+
+    sequence = tokenizer.texts_to_sequences([article])
+
+    padded = pad_sequences(
+        sequence,
+        maxlen=MAX_LEN,
+        padding="post",
+        truncating="post"
+    )
+
+    probability = float(
+        model.predict(padded, verbose=0)[0][0]
+    )
+
+    if probability >= 0.5:
+        prediction = "FAKE"
+        confidence = probability
+    else:
+        prediction = "REAL"
+        confidence = 1 - probability
+
+    return prediction, confidence
+
+
+# -----------------------------
+# Home route
+# -----------------------------
+@app.route("/")
+def home():
+
+    return jsonify({
+        "status": "online",
+        "message": "Fake News Detection API is running"
+    })
+
+
+# -----------------------------
+# Prediction API
+# -----------------------------
+@app.route("/predict", methods=["POST"])
+def predict():
+
+    try:
+
+        data = request.get_json()
+
+        if not data or "article" not in data:
+
+            return jsonify({
+                "error": "Please provide article text."
+            }), 400
+
+        article = data["article"]
+
+        if not isinstance(article, str) or not article.strip():
+
+            return jsonify({
+                "error": "Article text cannot be empty."
+            }), 400
+
+        prediction, confidence = predict_news(article)
+
+        return jsonify({
+
+            "prediction": prediction,
+
+            "confidence": round(
+                confidence * 100,
+                2
+            )
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# -----------------------------
+# Start server
+# -----------------------------
+if __name__ == "__main__":
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
