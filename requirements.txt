@@ -2,5 +2,4 @@ Flask
 tensorflow
 huggingface_hub
 numpy
-scikit-learn
 gunicorn
