@@ -3,11 +3,11 @@ import os
 import pickle
 
 # --------------------------------------------------
-# Disable GPU
+# Disable GPU / CUDA BEFORE importing TensorFlow
 # --------------------------------------------------
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-# Limit TensorFlow threads to reduce RAM usage
+# Reduce TensorFlow CPU/RAM usage
 os.environ["TF_NUM_INTRAOP_THREADS"] = "1"
 os.environ["TF_NUM_INTEROP_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -18,6 +18,7 @@ from huggingface_hub import hf_hub_download
 
 
 app = Flask(__name__)
+
 
 # --------------------------------------------------
 # TensorFlow CPU configuration
@@ -49,7 +50,7 @@ tokenizer = None
 
 
 # --------------------------------------------------
-# Load model only when needed
+# Lazy model loading
 # --------------------------------------------------
 
 def load_model_once():
@@ -60,28 +61,31 @@ def load_model_once():
     if model is not None and tokenizer is not None:
         return
 
-    print("Loading model...")
+    print("Starting model loading...", flush=True)
 
-    MODEL_PATH = hf_hub_download(
+    # Download model from Hugging Face
+    model_path = hf_hub_download(
         repo_id=MODEL_REPO,
         filename=MODEL_FILE
     )
 
-    print("Model downloaded.")
+    print("Model downloaded.", flush=True)
 
+    # Load TensorFlow model
     model = tf.keras.models.load_model(
-        MODEL_PATH,
+        model_path,
         compile=False
     )
 
-    print("Model loaded successfully.")
+    print("Model loaded successfully.", flush=True)
 
-    print("Loading tokenizer...")
+    # Load tokenizer
+    print("Loading tokenizer...", flush=True)
 
     with open("tokenizer.pkl", "rb") as f:
         tokenizer = pickle.load(f)
 
-    print("Tokenizer loaded successfully.")
+    print("Tokenizer loaded successfully.", flush=True)
 
 
 # --------------------------------------------------
@@ -109,9 +113,12 @@ def predict_news(article):
     )
 
     if probability >= 0.5:
+
         prediction = "FAKE"
         confidence = probability
+
     else:
+
         prediction = "REAL"
         confidence = 1 - probability
 
@@ -119,7 +126,7 @@ def predict_news(article):
 
 
 # --------------------------------------------------
-# Home
+# Home route
 # --------------------------------------------------
 
 @app.route("/", methods=["GET"])
@@ -127,7 +134,11 @@ def home():
 
     return jsonify({
         "status": "online",
-        "message": "Fake News Detection API is running"
+        "message": "Fake News Detection API is running",
+        "endpoints": {
+            "health": "/health",
+            "predict": "/predict"
+        }
     })
 
 
@@ -186,7 +197,11 @@ def predict():
 
     except Exception as e:
 
-        print("Prediction error:", str(e))
+        print(
+            "Prediction error:",
+            str(e),
+            flush=True
+        )
 
         return jsonify({
             "error": str(e)
@@ -199,7 +214,12 @@ def predict():
 
 if __name__ == "__main__":
 
-    port = int(os.environ.get("PORT", 5000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
 
     app.run(
         host="0.0.0.0",
