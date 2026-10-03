@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
 import pickle
 
@@ -18,6 +19,12 @@ from huggingface_hub import hf_hub_download
 
 
 app = Flask(__name__)
+
+# --------------------------------------------------
+# Enable CORS
+# Allows the frontend to communicate with this API
+# --------------------------------------------------
+CORS(app)
 
 
 # --------------------------------------------------
